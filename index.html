@@ -1,14 +1,19 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Lua Deobfuscator</title>
-  <style>
-    body { font-family: monospace; background: #111; color: #eee; padding: 20px; }
-    textarea { width: 100%; height: 200px; background: #222; color: #0f0; border: 1px solid #444; padding: 8px; }
-    button { padding: 10px 20px; background: #0a84ff; color: #fff; border: 0; cursor: pointer; margin: 10px 0; }
-    pre { background: #222; padding: 10px; border: 1px solid #444; white-space: pre-wrap; }
-  </style>
+<meta charset="utf-8">
+<title>Lua Deobfuscator</title>
+<style>
+  body { font-family: monospace; background: #111; color: #eee; padding: 20px; }
+  textarea { width: 100%; height: 200px; background: #222; color: #0f0;
+             border: 1px solid #444; padding: 8px; box-sizing: border-box; }
+  button { padding: 10px 20px; background: #0a84ff; color: #fff; border: 0;
+           cursor: pointer; margin: 10px 0; font-size: 14px; }
+  button:hover { background: #0070e0; }
+  pre { background: #222; padding: 10px; border: 1px solid #444;
+        white-space: pre-wrap; min-height: 60px; color: #0f0; }
+  h3 { color: #0a84ff; }
+</style>
 </head>
 <body>
   <h1>Lua Deobfuscator</h1>
@@ -19,62 +24,79 @@ local _0x3c4d = "776f726c64"
 print(_0x1a2b .. " " .. "48 65 6c 6c 6f")
 if false then print("dead code") end</textarea>
 
-  <button onclick="run()">Deobfuscate</button>
+  <button id="btn" onclick="run()">Deobfuscate</button>
 
   <h3>Output</h3>
-  <pre id="output">(result will appear here)</pre>
+  <pre id="output">(click Deobfuscate)</pre>
 
   <script src="https://fengari.io/static/js/fengari-web.js"></script>
   <script>
-    async function run() {
-      const input = document.getElementById('input').value;
-      const out = document.getElementById('output');
-      out.textContent = 'Loading Lua modules...';
+  const FILES = [
+    "utils.lua",
+    "lexer.lua",
+    "ast.lua",
+    "parser.lua",
+    "passes/unhex.lua",
+    "passes/constant_folding.lua",
+    "passes/string_decoder.lua",
+    "passes/variable_renamer.lua",
+    "passes/dead_code.lua",
+    "deobfuscator.lua",
+  ];
 
-      try {
-        // carrega todos os módulos do projeto
-        const files = [
-          'utils.lua',
-          'lexer.lua',
-          'ast.lua',
-          'parser.lua',
-          'passes/unhex.lua',
-          'passes/constant_folding.lua',
-          'passes/string_decoder.lua',
-          'passes/variable_renamer.lua',
-          'passes/dead_code.lua',
-          'deobfuscator.lua',
-        ];
+  let booted = false;
 
-        for (const f of files) {
-          const res = await fetch(f);
-          const code = await res.text();
-          // transforma "passes/x.lua" em módulo "passes.x"
-          const moduleName = f.replace(/\.lua$/, '').replace(/\//g, '.');
-          fengari.load(code, '@' + f)();
-          fengari.interop.js.global.__modules = fengari.interop.js.global.__modules || {};
-          // registra no package.loaded
-          fengari.load(`
-            package.loaded['${moduleName}'] = ...
-          `)(fengari.to_luastring(moduleName));
-        }
+  async function boot() {
+    const out = document.getElementById("output");
+    out.textContent = "Loading Lua modules...";
+    const L = fengari;
+    for (const path of FILES) {
+      const res = await fetch(path + "?v=" + Date.now());
+      if (!res.ok) throw new Error("Failed to load " + path);
+      const code = await res.text();
 
-        // roda o deobfuscator
-        const runner = `
-          local Deobf = require("deobfuscator")
-          local input = ...
-          local clean, err = Deobf.process(input)
-          if not clean then
-            return "ERROR: " .. tostring(err)
-          end
-          return clean
-        `;
-        const result = fengari.load(runner)(fengari.to_luastring(input));
-        out.textContent = fengari.to_jsstring(result);
-      } catch (e) {
-        out.textContent = 'Error: ' + e.message;
-      }
+      // registra o módulo em package.loaded ANTES de rodar o chunk
+      const moduleName = path.replace(/\.lua$/, "").replace(/\//g, ".");
+      const wrapped = `
+        package.loaded[${JSON.stringify(moduleName)}] = (function(...)
+          ${code}
+        end)(...)
+      `;
+      const chunk = L.load(L.to_luastring(wrapped), L.to_luastring("@" + path));
+      chunk();
     }
+    // carrega o "runner"
+    const runner = `
+      return function(src)
+        local Deobf = require("deobfuscator")
+        local ok, result = pcall(Deobf.process, src)
+        if not ok then return "ERROR: " .. tostring(result) end
+        return result
+      end
+    `;
+    const fn = L.load(L.to_luastring(runner))();
+    window.__deobf = fn;
+    booted = true;
+    out.textContent = "Ready. Click Deobfuscate.";
+  }
+
+  async function run() {
+    const out = document.getElementById("output");
+    const input = document.getElementById("input").value;
+    try {
+      if (!booted) await boot();
+      const result = window.__deobf(fengari.to_luastring(input));
+      out.textContent = fengari.to_jsstring(result);
+    } catch (e) {
+      out.textContent = "Error: " + (e.message || e);
+      console.error(e);
+    }
+  }
+
+  // pré-carrega ao abrir a página
+  window.addEventListener("load", () => boot().catch(e => {
+    document.getElementById("output").textContent = "Boot error: " + e.message;
+  }));
   </script>
 </body>
 </html>
