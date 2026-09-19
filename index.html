@@ -29,7 +29,8 @@ if false then print("dead code") end</textarea>
   <h3>Output</h3>
   <pre id="output">(click Deobfuscate)</pre>
 
-  <!-- fengari.io/static/js/fengari-web.js is no longer a reliable CDN path. -->
+  <!-- fengari-web exposes fengariWeb; the Lua VM API used below is fengari. -->
+  <script src="https://cdn.jsdelivr.net/npm/fengari@0.1.4/dist/fengari.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js"></script>
   <script>
   const FILES = [
@@ -46,16 +47,19 @@ if false then print("dead code") end</textarea>
   ];
 
   let booted = false;
+  let lua = null;
 
   async function boot() {
     const out = document.getElementById("output");
     out.textContent = "Loading Lua modules...";
 
-    if (!window.fengari) {
+    // fengari-web is a separate browser helper. The VM functions (load,
+    // to_luastring and to_jsstring) come from the fengari core bundle.
+    lua = window.fengari;
+    if (!lua || typeof lua.load !== "function") {
       throw new Error("Fengari failed to load. Check the CDN connection and reload the page.");
     }
 
-    const L = window.fengari;
     for (const path of FILES) {
       const res = await fetch(path + "?v=" + Date.now());
       if (!res.ok) throw new Error("Failed to load " + path);
@@ -68,7 +72,7 @@ if false then print("dead code") end</textarea>
           ${code}
         end)(...)
       `;
-      const chunk = L.load(L.to_luastring(wrapped), L.to_luastring("@" + path));
+      const chunk = lua.load(lua.to_luastring(wrapped), lua.to_luastring("@" + path));
       chunk();
     }
     // carrega o "runner"
@@ -80,7 +84,7 @@ if false then print("dead code") end</textarea>
         return result
       end
     `;
-    const fn = L.load(L.to_luastring(runner))();
+    const fn = lua.load(lua.to_luastring(runner))();
     window.__deobf = fn;
     booted = true;
     out.textContent = "Ready. Click Deobfuscate.";
@@ -91,8 +95,8 @@ if false then print("dead code") end</textarea>
     const input = document.getElementById("input").value;
     try {
       if (!booted) await boot();
-      const result = window.__deobf(fengari.to_luastring(input));
-      out.textContent = fengari.to_jsstring(result);
+      const result = window.__deobf(lua.to_luastring(input));
+      out.textContent = lua.to_jsstring(result);
     } catch (e) {
       out.textContent = "Error: " + (e.message || e);
       console.error(e);
