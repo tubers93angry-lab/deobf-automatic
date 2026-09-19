@@ -29,7 +29,8 @@ if false then print("dead code") end</textarea>
   <h3>Output</h3>
   <pre id="output">(click Deobfuscate)</pre>
 
-  <script src="https://fengari.io/static/js/fengari-web.js"></script>
+  <!-- fengari.io/static/js/fengari-web.js is no longer a reliable CDN path. -->
+  <script src="https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js"></script>
   <script>
   const FILES = [
     "utils.lua",
@@ -49,7 +50,12 @@ if false then print("dead code") end</textarea>
   async function boot() {
     const out = document.getElementById("output");
     out.textContent = "Loading Lua modules...";
-    const L = fengari;
+
+    if (!window.fengari) {
+      throw new Error("Fengari failed to load. Check the CDN connection and reload the page.");
+    }
+
+    const L = window.fengari;
     for (const path of FILES) {
       const res = await fetch(path + "?v=" + Date.now());
       if (!res.ok) throw new Error("Failed to load " + path);
